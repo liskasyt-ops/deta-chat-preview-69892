@@ -18,8 +18,13 @@ import {
   DrawerTitle,
   DrawerDescription,
 } from "@/components/ui/drawer";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { conversationStorage } from "@/lib/conversationStorage";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 interface Message {
   id: string;
@@ -28,7 +33,11 @@ interface Message {
   timestamp: Date;
   images?: string[];
   isTyping?: boolean;
-  sources?: Array<{ title: string; link: string; snippet: string }>;
+  sources?: Array<{
+    title: string;
+    link: string;
+    snippet: string;
+  }>;
 }
 
 const DAILY_QUESTIONS = [
@@ -54,7 +63,10 @@ const STATUS_ANIMATIONS = [
 ];
 
 export const Chat = () => {
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [user, setUser] = useState<any>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -65,8 +77,10 @@ export const Chat = () => {
   const [detaStatus, setDetaStatus] = useState<string | null>(null);
   const [currentStatusIndex, setCurrentStatusIndex] = useState(0);
   const [randomQuestions, setRandomQuestions] = useState<string[]>([]);
+  const [guestImageCount, setGuestImageCount] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -82,22 +96,37 @@ export const Chat = () => {
     }
   };
 
-  useEffect(() => { autoResize(); }, [input]);
+  useEffect(() => {
+    autoResize();
+  }, [input]);
 
-  // Initialize random questions
+  // Initialize random questions and guest image count
   useEffect(() => {
     const shuffled = [...DAILY_QUESTIONS].sort(() => Math.random() - 0.5);
     setRandomQuestions(shuffled.slice(0, 3));
+
+    // Load guest image count from localStorage
+    const stored = localStorage.getItem("guestImageCount");
+    if (stored) {
+      setGuestImageCount(parseInt(stored, 10));
+    }
   }, []);
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts - תיקון: בדיקה אם הפוקוס בתוך input/textarea
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // בדיקה אם הפוקוס בתוך textarea או input - אם כן, לא מפעילים shortcuts
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+        return;
+      }
+
       // Ctrl/Cmd + K - New chat
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        createNewConversation();
+        if (user) createNewConversation();
       }
+
       // Escape - Stop generation
       if (e.key === 'Escape' && isLoading) {
         e.preventDefault();
@@ -112,17 +141,18 @@ export const Chat = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading]);
+  }, [isLoading, user]);
 
   // Set status animation once based on input - no rotation
   useEffect(() => {
     if (!isLoading) return;
-    
+
     // Detect what action is being performed based on the last input
     const lastMessage = messages[messages.length - 1];
     const inputLower = (lastMessage?.content || "").toLowerCase();
+
     let startIndex = 3; // Default to "Thinking"
-    
+
     if (inputLower.includes("image") || inputLower.includes("תמונה") || inputLower.includes("picture") || inputLower.includes("draw") || inputLower.includes("generate")) {
       startIndex = 2; // "Generating Image"
     } else if (inputLower.includes("idea") || inputLower.includes("רעיון") || inputLower.includes("brainstorm") || inputLower.includes("suggest")) {
@@ -134,67 +164,172 @@ export const Chat = () => {
     } else if (inputLower.includes("explain") || inputLower.includes("הסבר") || inputLower.includes("what is") || inputLower.includes("מה זה")) {
       startIndex = 4; // "Explaining"
     }
-    
+
     setCurrentStatusIndex(startIndex);
   }, [isLoading, messages]);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user);
+      setIsCheckingAuth(false);
+      if (user) createNewConversation();
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+      setIsCheckingAuth(false);
+      if (session?.user) createNewConversation();
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const createNewConversation = async () => {
-    const newConversation = conversationStorage.create();
-    setCurrentConversationId(newConversation.id);
-    setMessages([]);
+    if (!user) return;
+
+    try {
+      const { data, error } = await (supabase as any)
+        .from("conversations")
+        .insert([{ user_id: user.id, title: "New Conversation" }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        setCurrentConversationId(data.id);
+        setMessages([]);
+      }
+    } catch {
+      toast.error("Failed to create conversation");
+    }
   };
 
-  const loadConversation = (conversation: any) => {
-    setCurrentConversationId(conversation.id);
-    const loadedMessages = conversation.messages.map((msg: any) => ({
-      id: Date.now().toString() + Math.random(),
-      role: msg.role,
-      content: msg.content,
-      timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
-      images: msg.images,
-    }));
-    setMessages(loadedMessages);
+  const loadConversation = async (conversationId: string) => {
+    try {
+      const { data, error } = await (supabase as any)
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      const loadedMessages: Message[] = (data || []).map((msg: any) => ({
+        id: msg.id,
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
+        timestamp: new Date(msg.created_at),
+        images: msg.image_url ? [msg.image_url] : undefined,
+      }));
+
+      setMessages(loadedMessages);
+      setCurrentConversationId(conversationId);
+    } catch {
+      toast.error("Failed to load conversation");
+    }
   };
 
-  const handleDeleteConversation = (id: string) => {
-    if (currentConversationId === id) {
-      createNewConversation();
+  const saveMessage = async (message: Message) => {
+    if (!currentConversationId) return;
+
+    try {
+      await (supabase as any).from("messages").insert([
+        {
+          conversation_id: currentConversationId,
+          role: message.role,
+          content: message.content,
+          image_url: message.images?.[0] || null,
+        },
+      ]);
+
+      if (message.role === "user" && messages.length === 0) {
+        const title = message.content.slice(0, 50);
+        await (supabase as any)
+          .from("conversations")
+          .update({ title })
+          .eq("id", currentConversationId);
+      }
+    } catch (error) {
+      console.error("Failed to save message:", error);
     }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    
-    // Convert images to base64 for public access (no storage needed)
-    toast.info("Converting images...", { id: 'convert' });
-    try {
-      const imagePromises = Array.from(files).map(file => {
-        return new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+
+    // For guests, check if they need auth first
+    if (!user) {
+      toast.error("Please sign in to upload images", {
+        action: {
+          label: "Sign In",
+          onClick: () => navigate("/auth?mode=signin")
+        }
       });
-      
-      const base64Images = await Promise.all(imagePromises);
-      setUploadedImages(prev => [...prev, ...base64Images]);
-      toast.success(`${base64Images.length} image${base64Images.length > 1 ? 's' : ''} ready!`, { id: 'convert' });
-    } catch (error) {
-      toast.error("Failed to process images", { id: 'convert' });
+      return;
+    }
+
+    setIsUploadingImages(true);
+    toast.loading(`Uploading ${files.length} image${files.length > 1 ? 's' : ''}...`, { id: 'upload' });
+
+    try {
+      const uploadPromises = Array.from(files).map(async (file) => {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${user.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+
+        const { error: uploadError } = await supabase.storage
+          .from("chat-images")
+          .upload(fileName, file);
+
+        if (uploadError) throw uploadError;
+
+        const { data } = supabase.storage.from("chat-images").getPublicUrl(fileName);
+        return data.publicUrl;
+      });
+
+      const urls = await Promise.all(uploadPromises);
+      setUploadedImages(prev => [...prev, ...urls]);
+      toast.success(`${urls.length} image${urls.length > 1 ? 's' : ''} uploaded successfully!`, { id: 'upload' });
+    } catch (error: any) {
+      toast.error("Failed to upload images", { id: 'upload' });
+    } finally {
+      setIsUploadingImages(false);
     }
   };
 
   const handleSend = async () => {
     if ((!input.trim() && uploadedImages.length === 0) || isLoading) return;
-    
-    // Everyone has unlimited image generation - no restrictions
 
+    // Check if guest is requesting image generation and has reached limit (only for guests)
+    if (!user) {
+      const inputLower = input.toLowerCase();
+      const isImageRequest =
+        inputLower.includes("image") ||
+        inputLower.includes("תמונה") ||
+        inputLower.includes("picture") ||
+        inputLower.includes("draw") ||
+        inputLower.includes("generate") ||
+        inputLower.includes("create a");
+
+      if (isImageRequest && guestImageCount >= 3) {
+        toast.error("You've reached the 3 free image limit! Sign up for unlimited images.", {
+          action: {
+            label: "Sign Up",
+            onClick: () => navigate("/auth?mode=signup")
+          }
+        });
+        return;
+      }
+    }
+
+    // Logged-in users have unlimited image generation
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
@@ -204,6 +339,7 @@ export const Chat = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    await saveMessage(userMessage);
 
     const currentInput = input;
     setInput("");
@@ -231,7 +367,14 @@ export const Chat = () => {
         }
         return [
           ...prev,
-          { id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages, sources: assistantSources }
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: assistantContent,
+            timestamp: new Date(),
+            images: assistantImages,
+            sources: assistantSources
+          }
         ];
       });
     };
@@ -243,12 +386,25 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          // No restrictions - everyone can generate unlimited images
+          // Check guest image limit (only for guests, logged-in users unlimited)
+          if (!user) {
+            const newCount = guestImageCount + 1;
+            setGuestImageCount(newCount);
+            localStorage.setItem("guestImageCount", newCount.toString());
+
+            if (newCount > 3) {
+              toast.error("You've reached the free image limit! Sign up for unlimited images.");
+              return;
+            }
+          }
+
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant") {
-              return prev.map((m, i) => i === prev.length - 1 ? { ...m, images: [...assistantImages] } : m);
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, images: [...assistantImages] } : m
+              );
             }
             return prev;
           });
@@ -258,7 +414,9 @@ export const Chat = () => {
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant") {
-              return prev.map((m, i) => i === prev.length - 1 ? { ...m, sources } : m);
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, sources } : m
+              );
             }
             return prev;
           });
@@ -267,21 +425,15 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          
-          // Save to localStorage
-          if (currentConversationId) {
-            conversationStorage.updateMessages(currentConversationId, [
-              ...messages,
-              userMessage,
-              { 
-                id: Date.now().toString(), 
-                role: "assistant", 
-                content: assistantContent, 
-                timestamp: new Date(), 
-                images: assistantImages.length ? assistantImages : undefined 
-              }
-            ]);
-          }
+
+          await saveMessage({
+            id: Date.now().toString(),
+            role: "assistant",
+            content: assistantContent,
+            timestamp: new Date(),
+            images: assistantImages.length ? assistantImages : undefined,
+            sources: assistantSources.length ? assistantSources : undefined
+          });
         },
         onError: (error) => {
           toast.error(error);
@@ -417,7 +569,14 @@ export const Chat = () => {
         }
         return [
           ...prev,
-          { id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages, sources: assistantSources }
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: assistantContent,
+            timestamp: new Date(),
+            images: assistantImages,
+            sources: assistantSources
+          }
         ];
       });
     };
@@ -429,12 +588,24 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          // No restrictions - everyone can generate unlimited images
+          if (!user) {
+            const newCount = guestImageCount + 1;
+            setGuestImageCount(newCount);
+            localStorage.setItem("guestImageCount", newCount.toString());
+
+            if (newCount > 3) {
+              toast.error("You've reached the free image limit! Sign up for unlimited images.");
+              return;
+            }
+          }
+
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant") {
-              return prev.map((m, i) => i === prev.length - 1 ? { ...m, images: [...assistantImages] } : m);
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, images: [...assistantImages] } : m
+              );
             }
             return prev;
           });
@@ -444,7 +615,9 @@ export const Chat = () => {
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last?.role === "assistant") {
-              return prev.map((m, i) => i === prev.length - 1 ? { ...m, sources } : m);
+              return prev.map((m, i) =>
+                i === prev.length - 1 ? { ...m, sources } : m
+              );
             }
             return prev;
           });
@@ -453,21 +626,15 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          
-          // Save to localStorage
-          if (currentConversationId) {
-            const finalMessages: Message[] = [];
-            messages.forEach(m => finalMessages.push(m));
-            finalMessages.push({
-              id: Date.now().toString(),
-              role: "assistant",
-              content: assistantContent,
-              timestamp: new Date(),
-              images: assistantImages.length ? assistantImages : undefined,
-              sources: assistantSources.length ? assistantSources : undefined,
-            });
-            conversationStorage.updateMessages(currentConversationId, finalMessages);
-          }
+
+          await saveMessage({
+            id: Date.now().toString(),
+            role: "assistant",
+            content: assistantContent,
+            timestamp: new Date(),
+            images: assistantImages.length ? assistantImages : undefined,
+            sources: assistantSources.length ? assistantSources : undefined
+          });
         },
         onError: (error) => {
           toast.error(error);
@@ -492,7 +659,7 @@ export const Chat = () => {
       if (currentConversationId) {
         await (supabase as any).from("messages").delete().eq("id", messageId);
       }
-      
+
       // Remove from state
       setMessages(prev => prev.filter(m => m.id !== messageId));
       toast.success("Message deleted");
@@ -504,46 +671,46 @@ export const Chat = () => {
   const isEmpty = messages.length === 0;
   const currentStatus = STATUS_ANIMATIONS[currentStatusIndex];
 
-  // SidebarContent wrapper
+  // If checking auth, show loading
+  if (isCheckingAuth) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gradient-to-b from-black to-purple-900">
+        <motion.div
+          animate={{ scale: [1, 1.2, 1], rotate: [0, 360] }}
+          transition={{ duration: 2, repeat: Infinity }}
+        >
+          <Sparkles className="h-16 w-16 text-primary shadow-neon" />
+        </motion.div>
+      </div>
+    );
+  }
+
   const SidebarContent = () => (
     <Sidebar
-      onNewChat={() => {
-        createNewConversation();
-        if (isMobile) setMobileMenuOpen(false);
-      }}
-      onSelectConversation={(conversation) => {
-        loadConversation(conversation);
-        if (isMobile) setMobileMenuOpen(false);
-      }}
+      onNewChat={createNewConversation}
+      onSelectConversation={loadConversation}
       currentConversationId={currentConversationId || undefined}
-      onDeleteConversation={handleDeleteConversation}
+      user={user}
     />
   );
 
   return (
     <div className="flex h-screen bg-gradient-to-b from-black to-purple-900">
       {/* Desktop Sidebar */}
-      {!isMobile && <SidebarContent />}
+      {user && !isMobile && <SidebarContent />}
 
-      {/* Mobile Drawer */}
-      {isMobile && (
-        <Drawer
-          open={mobileMenuOpen}
+      {/* Mobile Drawer - תיקון: הוספת modal={false} */}
+      {user && isMobile && (
+        <Drawer 
+          open={mobileMenuOpen} 
           onOpenChange={setMobileMenuOpen}
           modal={false}
+          dismissible={true}
         >
           <DrawerContent className="h-[85vh]">
-            <DrawerHeader className="flex items-center justify-between px-4">
-              <div className="sr-only">
-                <DrawerTitle>Menu</DrawerTitle>
-                <DrawerDescription>Navigation and chat history</DrawerDescription>
-              </div>
-              {/* כפתור סגירה ברור בתוך ה־Drawer בשביל ux במובייל */}
-              <div className="ml-auto">
-                <Button size="icon" variant="ghost" onClick={() => setMobileMenuOpen(false)} className="h-8 w-8">
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
+            <DrawerHeader className="sr-only">
+              <DrawerTitle>Menu</DrawerTitle>
+              <DrawerDescription>Navigation and chat history</DrawerDescription>
             </DrawerHeader>
             <SidebarContent />
           </DrawerContent>
@@ -561,7 +728,7 @@ export const Chat = () => {
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-2 md:gap-3">
               {/* Mobile Menu Button */}
-              {isMobile && (
+              {user && isMobile && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -572,7 +739,11 @@ export const Chat = () => {
                 </Button>
               )}
 
-              <motion.div animate={{ scale: [1, 1.05, 1] }} transition={{ duration: 2, repeat: Infinity }} className="flex items-center gap-2">
+              <motion.div
+                animate={{ scale: [1, 1.05, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="flex items-center gap-2"
+              >
                 <Zap className="h-4 w-4 md:h-5 md:w-5 text-primary" />
                 <Select value={selectedModel} onValueChange={setSelectedModel}>
                   <SelectTrigger className="w-[100px] md:w-[140px] glow-border bg-card/50 text-xs md:text-sm h-8 md:h-10">
@@ -589,8 +760,31 @@ export const Chat = () => {
                 </Select>
               </motion.div>
             </div>
+
             <div className="flex items-center gap-2 md:gap-4">
-              <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 3, repeat: Infinity }} className="h-2 w-2 rounded-full bg-primary shadow-neon" />
+              {!user && (
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button
+                    onClick={() => navigate("/auth?mode=signup")}
+                    size={isMobile ? "sm" : "default"}
+                    className="gradient-primary shadow-neon transition-smooth text-xs md:text-sm h-8 md:h-10 px-2 md:px-4"
+                  >
+                    {isMobile ? "Sign In" : "Sign Up / Sign In"}
+                  </Button>
+                </motion.div>
+              )}
+
+              {!user && !isMobile && (
+                <span className="text-xs text-muted-foreground">
+                  {guestImageCount}/3 free images
+                </span>
+              )}
+
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 3, repeat: Infinity }}
+                className="h-2 w-2 rounded-full bg-primary shadow-neon"
+              />
             </div>
           </div>
         </motion.header>
@@ -600,13 +794,25 @@ export const Chat = () => {
           <div className="mx-auto max-w-4xl py-4 md:py-8">
             <AnimatePresence mode="popLayout">
               {isEmpty ? (
-                <motion.div key="welcome" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-                  <motion.div animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }} transition={{ duration: 4, repeat: Infinity }} className="mb-8">
+                <motion.div
+                  key="welcome"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="flex flex-col items-center justify-center min-h-[60vh] text-center"
+                >
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+                    transition={{ duration: 4, repeat: Infinity }}
+                    className="mb-8"
+                  >
                     <Sparkles className="h-20 w-20 text-primary shadow-neon" />
                   </motion.div>
+
                   <motion.h1 className="text-3xl md:text-5xl font-bold mb-6 md:mb-8 bg-gradient-to-r from-primary via-primary-glow to-secondary bg-clip-text text-transparent px-4 md:px-0">
                     Where should we begin?
                   </motion.h1>
+
                   <div className="mt-6 md:mt-8 space-y-3 max-w-2xl px-4 md:px-0">
                     <p className="text-xs md:text-sm text-muted-foreground mb-4">💡 Daily Questions</p>
                     {randomQuestions.map((question, idx) => (
@@ -665,6 +871,7 @@ export const Chat = () => {
                 </div>
               )}
             </AnimatePresence>
+
             {isLoading && detaStatus && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -687,56 +894,108 @@ export const Chat = () => {
                 </div>
               </motion.div>
             )}
+
             <div ref={scrollRef} />
           </div>
         </ScrollArea>
 
         {/* Input Area */}
-        <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.5 }} className="glass border-t border-border/50 px-4 py-6">
+        <motion.div
+          initial={{ y: 50, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          transition={{ duration: 0.5 }}
+          className="glass border-t border-border/50 px-4 py-6"
+        >
           <div className="mx-auto max-w-4xl">
             {uploadedImages.length > 0 && (
               <div className="mb-3 flex flex-wrap gap-2">
                 {uploadedImages.map((img, idx) => (
                   <div key={idx} className="relative inline-block">
-                    <img src={img} alt={`Upload preview ${idx + 1}`} className="h-20 w-20 object-cover rounded-xl glass glow-border" />
-                    <Button size="icon" variant="ghost" onClick={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))} className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive hover:bg-destructive/80">
+                    <img
+                      src={img}
+                      alt={`Upload preview ${idx + 1}`}
+                      className="h-20 w-20 object-cover rounded-xl glass glow-border"
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => setUploadedImages(prev => prev.filter((_, i) => i !== idx))}
+                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-destructive hover:bg-destructive/80"
+                    >
                       <X className="h-3 w-3" />
                     </Button>
                   </div>
                 ))}
               </div>
             )}
+
             <div className="relative flex items-center gap-3 p-3 rounded-2xl glass glow-border shadow-neon">
-              <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageUpload} />
-              <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isUploadingImages}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={handleImageUpload}
+              />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImages}
+              >
                 {isUploadingImages ? (
-                  <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }}>
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  >
                     <Paperclip className="h-5 w-5" />
                   </motion.div>
                 ) : (
                   <Paperclip className="h-5 w-5" />
                 )}
               </Button>
+
+              {/* תיקון: הוספת stopPropagation לכל האירועים */}
               <Textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyPress}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  setInput(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  handleKeyPress(e);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.stopPropagation()}
                 placeholder="Ask Anything..."
                 className="flex-1 bg-transparent border-0 focus-visible:ring-0 resize-none min-h-[40px] max-h-[200px] overflow-y-auto"
                 disabled={isLoading}
                 rows={1}
               />
-              <Button 
-                variant="ghost" 
-                size="icon" 
+
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={handleVoiceInput}
                 className={isRecording ? "text-destructive animate-pulse" : ""}
               >
                 {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
               </Button>
+
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button onClick={isLoading ? undefined : handleSend} size="icon" className={isLoading ? "bg-destructive hover:bg-destructive/90 shadow-neon transition-smooth" : "gradient-primary shadow-neon transition-smooth hover:shadow-glow"}>
+                <Button
+                  onClick={isLoading ? undefined : handleSend}
+                  size="icon"
+                  className={
+                    isLoading
+                      ? "bg-destructive hover:bg-destructive/90 shadow-neon transition-smooth"
+                      : "gradient-primary shadow-neon transition-smooth hover:shadow-glow"
+                  }
+                >
                   {isLoading ? <Square className="h-4 w-4" /> : <Send className="h-4 w-4" />}
                 </Button>
               </motion.div>

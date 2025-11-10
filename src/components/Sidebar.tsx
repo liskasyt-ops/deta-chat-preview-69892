@@ -3,16 +3,26 @@ import {
   Library,
   Sparkles,
   PanelLeft,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
+import { ConversationHistory } from "./ConversationHistory";
 
 interface SidebarProps {
   onNewChat: () => void;
+  onSelectConversation: (conversation: any) => void;
+  currentConversationId?: string;
+  onDeleteConversation?: (id: string) => void;
 }
 
-export const Sidebar = ({ onNewChat }: SidebarProps) => {
+export const Sidebar = ({ 
+  onNewChat, 
+  onSelectConversation,
+  currentConversationId,
+  onDeleteConversation,
+}: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -109,6 +119,30 @@ export const Sidebar = ({ onNewChat }: SidebarProps) => {
             <Library className="h-5 w-5" />
             {!isCollapsed && <span>Library</span>}
           </Button>
+
+          {/* Chat History */}
+          <div className="flex-1 flex flex-col min-h-0 pt-4">
+            {!isCollapsed && (
+              <>
+                <div className="flex items-center gap-2 px-3 mb-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="text-xs font-semibold text-muted-foreground">
+                    Chat History
+                  </h3>
+                </div>
+
+                <div className="flex-1 overflow-y-auto pr-1">
+                  <ConversationHistory
+                    onSelectConversation={onSelectConversation}
+                    currentConversationId={currentConversationId}
+                    onDeleteConversation={onDeleteConversation}
+                  />
+                </div>
+              </>
+            )}
+
+            {isCollapsed && <div className="flex-1" />}
+          </div>
         </nav>
       </div>
 

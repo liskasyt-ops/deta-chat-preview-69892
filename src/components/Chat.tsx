@@ -19,6 +19,7 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { conversationStorage } from "@/lib/conversationStorage";
 
 interface Message {
   id: string;
@@ -142,19 +143,27 @@ export const Chat = () => {
   }, [messages]);
 
   const createNewConversation = async () => {
-    // No database conversation needed for public access
-    setCurrentConversationId(Date.now().toString());
+    const newConversation = conversationStorage.create();
+    setCurrentConversationId(newConversation.id);
     setMessages([]);
   };
 
-  const loadConversation = async (conversationId: string) => {
-    // No conversation loading for public access
-    // Conversations are session-only
+  const loadConversation = (conversation: any) => {
+    setCurrentConversationId(conversation.id);
+    const loadedMessages = conversation.messages.map((msg: any) => ({
+      id: Date.now().toString() + Math.random(),
+      role: msg.role,
+      content: msg.content,
+      timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      images: msg.images,
+    }));
+    setMessages(loadedMessages);
   };
 
-  const saveMessage = async (message: Message) => {
-    // No database persistence needed for public access
-    // Messages are only stored in memory during the session
+  const handleDeleteConversation = (id: string) => {
+    if (currentConversationId === id) {
+      createNewConversation();
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -195,7 +204,6 @@ export const Chat = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
-    await saveMessage(userMessage);
 
     const currentInput = input;
     setInput("");
@@ -259,7 +267,21 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          await saveMessage({ id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages.length ? assistantImages : undefined, sources: assistantSources.length ? assistantSources : undefined });
+          
+          // Save to localStorage
+          if (currentConversationId) {
+            conversationStorage.updateMessages(currentConversationId, [
+              ...messages,
+              userMessage,
+              { 
+                id: Date.now().toString(), 
+                role: "assistant", 
+                content: assistantContent, 
+                timestamp: new Date(), 
+                images: assistantImages.length ? assistantImages : undefined 
+              }
+            ]);
+          }
         },
         onError: (error) => {
           toast.error(error);
@@ -431,7 +453,21 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          await saveMessage({ id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages.length ? assistantImages : undefined, sources: assistantSources.length ? assistantSources : undefined });
+          
+          // Save to localStorage
+          if (currentConversationId) {
+            const finalMessages: Message[] = [];
+            messages.forEach(m => finalMessages.push(m));
+            finalMessages.push({
+              id: Date.now().toString(),
+              role: "assistant",
+              content: assistantContent,
+              timestamp: new Date(),
+              images: assistantImages.length ? assistantImages : undefined,
+              sources: assistantSources.length ? assistantSources : undefined,
+            });
+            conversationStorage.updateMessages(currentConversationId, finalMessages);
+          }
         },
         onError: (error) => {
           toast.error(error);
@@ -473,9 +509,14 @@ export const Chat = () => {
     <Sidebar
       onNewChat={() => {
         createNewConversation();
-        // אם בסמארטפון - נסגור את ה־drawer אחרי יצירת שיחה
         if (isMobile) setMobileMenuOpen(false);
       }}
+      onSelectConversation={(conversation) => {
+        loadConversation(conversation);
+        if (isMobile) setMobileMenuOpen(false);
+      }}
+      currentConversationId={currentConversationId || undefined}
+      onDeleteConversation={handleDeleteConversation}
     />
   );
 
@@ -488,21 +529,8 @@ export const Chat = () => {
       {isMobile && (
         <Drawer
           open={mobileMenuOpen}
-          onOpenChange={(open) => {
-            // אם המשתמש בפוקוס על הטקסטאריאה ומקליד — נתעלם משינוי פתיחה/סגירה אוטומטי
-            // כך ה־Drawer לא ייסגר/ייפתח בזמן הקלדה
-            try {
-              const isTextareaFocused = document.activeElement === textareaRef.current;
-              if (isTextareaFocused) {
-                // התעלמות — למנוע הפרעות בזמן הקלדה
-                return;
-              }
-            } catch (err) {
-              // במקרה של בעיה, נפעל כרגיל
-            }
-
-            setMobileMenuOpen(open);
-          }}
+          onOpenChange={setMobileMenuOpen}
+          modal={false}
         >
           <DrawerContent className="h-[85vh]">
             <DrawerHeader className="flex items-center justify-between px-4">

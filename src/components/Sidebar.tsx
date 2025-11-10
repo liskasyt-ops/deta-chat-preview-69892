@@ -3,29 +3,16 @@ import {
   Library,
   Sparkles,
   PanelLeft,
-  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserMenu } from "./UserMenu";
-import { useNavigate } from "react-router-dom";
-import { ConversationsList } from "./ConversationsList";
 import { useState } from "react";
 
 interface SidebarProps {
   onNewChat: () => void;
-  onSelectConversation: (conversationId: string) => void;
-  currentConversationId?: string;
-  user?: any; // המשתמש המחובר
 }
 
-export const Sidebar = ({
-  onNewChat,
-  onSelectConversation,
-  currentConversationId,
-  user,
-}: SidebarProps) => {
-  const navigate = useNavigate();
+export const Sidebar = ({ onNewChat }: SidebarProps) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   return (
@@ -122,54 +109,15 @@ export const Sidebar = ({
             <Library className="h-5 w-5" />
             {!isCollapsed && <span>Library</span>}
           </Button>
-
-          {/* Chat History */}
-          <div className="flex-1 flex flex-col min-h-0 pt-4">
-            {!isCollapsed && (
-              <>
-                <div className="flex items-center gap-2 px-3 mb-2">
-                  <History className="h-4 w-4 text-muted-foreground" />
-                  <h3 className="text-xs font-semibold text-muted-foreground">
-                    Chat History
-                  </h3>
-                </div>
-
-                <div className="flex-1 overflow-y-auto pr-1">
-                  <ConversationsList
-                    onSelectConversation={onSelectConversation}
-                    currentConversationId={currentConversationId}
-                  />
-                </div>
-              </>
-            )}
-
-            {/* Sidebar סגור - ניתן להשאיר מקום ריק */}
-            {isCollapsed && <div className="flex-1" />}
-          </div>
         </nav>
       </div>
 
-      {/* Footer - כשהסיידבר סגור, למטה */}
-      <div className="p-4 flex justify-center items-center">
-        {isCollapsed ? (
-          user ? (
-            <img
-              src={user.avatar_url || "/default-avatar.png"}
-              alt="User Avatar"
-              className="h-8 w-8 rounded-full"
-            />
-          ) : (
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/auth")}
-              title="Login"
-            >
-              🔵
-            </Button>
-          )
-        ) : (
-          <UserMenu navigate={navigate} />
+      {/* Footer */}
+      <div className="p-4 text-center">
+        {!isCollapsed && (
+          <div className="text-xs text-muted-foreground">
+            Powered by LiskCell · LPT Engine
+          </div>
         )}
       </div>
     </motion.aside>

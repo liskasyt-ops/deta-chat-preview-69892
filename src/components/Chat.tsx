@@ -53,10 +53,7 @@ const STATUS_ANIMATIONS = [
 ];
 
 export const Chat = () => {
-  const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const [user, setUser] = useState<any>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -67,7 +64,6 @@ export const Chat = () => {
   const [detaStatus, setDetaStatus] = useState<string | null>(null);
   const [currentStatusIndex, setCurrentStatusIndex] = useState(0);
   const [randomQuestions, setRandomQuestions] = useState<string[]>([]);
-  const [guestImageCount, setGuestImageCount] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -87,16 +83,10 @@ export const Chat = () => {
 
   useEffect(() => { autoResize(); }, [input]);
 
-  // Initialize random questions and guest image count
+  // Initialize random questions
   useEffect(() => {
     const shuffled = [...DAILY_QUESTIONS].sort(() => Math.random() - 0.5);
     setRandomQuestions(shuffled.slice(0, 3));
-    
-    // Load guest image count from localStorage
-    const stored = localStorage.getItem("guestImageCount");
-    if (stored) {
-      setGuestImageCount(parseInt(stored, 10));
-    }
   }, []);
 
   // Keyboard shortcuts
@@ -105,7 +95,7 @@ export const Chat = () => {
       // Ctrl/Cmd + K - New chat
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
-        if (user) createNewConversation();
+        createNewConversation();
       }
       // Escape - Stop generation
       if (e.key === 'Escape' && isLoading) {
@@ -121,7 +111,7 @@ export const Chat = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading, user]);
+  }, [isLoading]);
 
   // Set status animation once based on input - no rotation
   useEffect(() => {
@@ -148,151 +138,53 @@ export const Chat = () => {
   }, [isLoading, messages]);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-      setIsCheckingAuth(false);
-      if (user) createNewConversation();
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      setIsCheckingAuth(false);
-      if (session?.user) createNewConversation();
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const createNewConversation = async () => {
-    if (!user) return;
-    try {
-      const { data, error } = await (supabase as any)
-        .from("conversations")
-        .insert([{ user_id: user.id, title: "New Conversation" }])
-        .select()
-        .single();
-      if (error) throw error;
-      if (data) {
-        setCurrentConversationId(data.id);
-        setMessages([]);
-      }
-    } catch {
-      toast.error("Failed to create conversation");
-    }
+    // No database conversation needed for public access
+    setCurrentConversationId(Date.now().toString());
+    setMessages([]);
   };
 
   const loadConversation = async (conversationId: string) => {
-    try {
-      const { data, error } = await (supabase as any)
-        .from("messages")
-        .select("*")
-        .eq("conversation_id", conversationId)
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-
-      const loadedMessages: Message[] = (data || []).map((msg: any) => ({
-        id: msg.id,
-        role: msg.role as "user" | "assistant",
-        content: msg.content,
-        timestamp: new Date(msg.created_at),
-        images: msg.image_url ? [msg.image_url] : undefined,
-      }));
-
-      setMessages(loadedMessages);
-      setCurrentConversationId(conversationId);
-    } catch {
-      toast.error("Failed to load conversation");
-    }
+    // No conversation loading for public access
+    // Conversations are session-only
   };
 
   const saveMessage = async (message: Message) => {
-    if (!currentConversationId) return;
-    try {
-      await (supabase as any).from("messages").insert([
-        {
-          conversation_id: currentConversationId,
-          role: message.role,
-          content: message.content,
-          image_url: message.images?.[0] || null,
-        },
-      ]);
-      if (message.role === "user" && messages.length === 0) {
-        const title = message.content.slice(0, 50);
-        await (supabase as any)
-          .from("conversations")
-          .update({ title })
-          .eq("id", currentConversationId);
-      }
-    } catch (error) {
-      console.error("Failed to save message:", error);
-    }
+    // No database persistence needed for public access
+    // Messages are only stored in memory during the session
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     
-    // For guests, check if they need auth first
-    if (!user) {
-      toast.error("Please sign in to upload images", {
-        action: {
-          label: "Sign In",
-          onClick: () => navigate("/auth?mode=signin")
-        }
-      });
-      return;
-    }
-    
-    setIsUploadingImages(true);
-    toast.loading(`Uploading ${files.length} image${files.length > 1 ? 's' : ''}...`, { id: 'upload' });
-    
+    // Convert images to base64 for public access (no storage needed)
+    toast.info("Converting images...", { id: 'convert' });
     try {
-      const uploadPromises = Array.from(files).map(async (file) => {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${user.id}/${Date.now()}-${Math.random()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from("chat-images")
-          .upload(fileName, file);
-        if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from("chat-images").getPublicUrl(fileName);
-        return data.publicUrl;
+      const imagePromises = Array.from(files).map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
       });
       
-      const urls = await Promise.all(uploadPromises);
-      setUploadedImages(prev => [...prev, ...urls]);
-      toast.success(`${urls.length} image${urls.length > 1 ? 's' : ''} uploaded successfully!`, { id: 'upload' });
-    } catch (error: any) {
-      toast.error("Failed to upload images", { id: 'upload' });
-    } finally {
-      setIsUploadingImages(false);
+      const base64Images = await Promise.all(imagePromises);
+      setUploadedImages(prev => [...prev, ...base64Images]);
+      toast.success(`${base64Images.length} image${base64Images.length > 1 ? 's' : ''} ready!`, { id: 'convert' });
+    } catch (error) {
+      toast.error("Failed to process images", { id: 'convert' });
     }
   };
 
   const handleSend = async () => {
     if ((!input.trim() && uploadedImages.length === 0) || isLoading) return;
     
-    // Check if guest is requesting image generation and has reached limit (only for guests)
-    if (!user) {
-      const inputLower = input.toLowerCase();
-      const isImageRequest = inputLower.includes("image") || inputLower.includes("תמונה") || 
-                            inputLower.includes("picture") || inputLower.includes("draw") ||
-                            inputLower.includes("generate") || inputLower.includes("create a");
-      
-      if (isImageRequest && guestImageCount >= 3) {
-        toast.error("You've reached the 3 free image limit! Sign up for unlimited images.", {
-          action: {
-            label: "Sign Up",
-            onClick: () => navigate("/auth?mode=signup")
-          }
-        });
-        return;
-      }
-    }
-    // Logged-in users have unlimited image generation
+    // Everyone has unlimited image generation - no restrictions
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -343,18 +235,7 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          // Check guest image limit (only for guests, logged-in users unlimited)
-          if (!user) {
-            const newCount = guestImageCount + 1;
-            setGuestImageCount(newCount);
-            localStorage.setItem("guestImageCount", newCount.toString());
-            
-            if (newCount > 3) {
-              toast.error("You've reached the free image limit! Sign up for unlimited images.");
-              return;
-            }
-          }
-          
+          // No restrictions - everyone can generate unlimited images
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
@@ -526,15 +407,7 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          if (!user) {
-            const newCount = guestImageCount + 1;
-            setGuestImageCount(newCount);
-            localStorage.setItem("guestImageCount", newCount.toString());
-            if (newCount > 3) {
-              toast.error("You've reached the free image limit! Sign up for unlimited images.");
-              return;
-            }
-          }
+          // No restrictions - everyone can generate unlimited images
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
@@ -595,21 +468,7 @@ export const Chat = () => {
   const isEmpty = messages.length === 0;
   const currentStatus = STATUS_ANIMATIONS[currentStatusIndex];
 
-  // If checking auth, show loading
-  if (isCheckingAuth) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-gradient-to-b from-black to-purple-900">
-        <motion.div
-          animate={{ scale: [1, 1.2, 1], rotate: [0, 360] }}
-          transition={{ duration: 2, repeat: Infinity }}
-        >
-          <Sparkles className="h-16 w-16 text-primary shadow-neon" />
-        </motion.div>
-      </div>
-    );
-  }
-
-  // SidebarContent wrapper: now also closes mobile drawer after selecting/creating a conversation
+  // SidebarContent wrapper
   const SidebarContent = () => (
     <Sidebar
       onNewChat={() => {
@@ -617,23 +476,16 @@ export const Chat = () => {
         // אם בסמארטפון - נסגור את ה־drawer אחרי יצירת שיחה
         if (isMobile) setMobileMenuOpen(false);
       }}
-      onSelectConversation={(id: string) => {
-        loadConversation(id);
-        // נסגור את ה־drawer על בחירה כדי לשפר חווית מובייל
-        if (isMobile) setMobileMenuOpen(false);
-      }}
-      currentConversationId={currentConversationId || undefined}
-      user={user}
     />
   );
 
   return (
     <div className="flex h-screen bg-gradient-to-b from-black to-purple-900">
       {/* Desktop Sidebar */}
-      {user && !isMobile && <SidebarContent />}
+      {!isMobile && <SidebarContent />}
 
       {/* Mobile Drawer */}
-      {user && isMobile && (
+      {isMobile && (
         <Drawer
           open={mobileMenuOpen}
           onOpenChange={(open) => {
@@ -681,7 +533,7 @@ export const Chat = () => {
           <div className="flex items-center justify-between max-w-5xl mx-auto">
             <div className="flex items-center gap-2 md:gap-3">
               {/* Mobile Menu Button */}
-              {user && isMobile && (
+              {isMobile && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -710,22 +562,6 @@ export const Chat = () => {
               </motion.div>
             </div>
             <div className="flex items-center gap-2 md:gap-4">
-              {!user && (
-                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button
-                    onClick={() => navigate("/auth?mode=signup")}
-                    size={isMobile ? "sm" : "default"}
-                    className="gradient-primary shadow-neon transition-smooth text-xs md:text-sm h-8 md:h-10 px-2 md:px-4"
-                  >
-                    {isMobile ? "Sign In" : "Sign Up / Sign In"}
-                  </Button>
-                </motion.div>
-              )}
-              {!user && !isMobile && (
-                <span className="text-xs text-muted-foreground">
-                  {guestImageCount}/3 free images
-                </span>
-              )}
               <motion.div animate={{ opacity: [0.5, 1, 0.5] }} transition={{ duration: 3, repeat: Infinity }} className="h-2 w-2 rounded-full bg-primary shadow-neon" />
             </div>
           </div>

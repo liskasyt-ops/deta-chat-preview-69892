@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Zap, Send, Sparkles, Paperclip, Mic, X, Square, Code2, Search, Image as ImageIcon, Brain, BookOpen, Lightbulb, RefreshCw, Trash2, MicOff, Menu } from "lucide-react";
+import { Zap, Send, Sparkles, Paperclip, Mic, X, Square, Code2, Search, Image as ImageIcon, Brain, BookOpen, Lightbulb, RefreshCw, Trash2, MicOff, Menu, Copy } from "lucide-react";
 import { ChatMessage } from "./ChatMessage";
 import { streamChat } from "@/lib/streamChat";
 import { toast } from "sonner";
@@ -19,6 +19,7 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { conversationStorage } from "@/lib/conversationStorage";
 
 interface Message {
   id: string;
@@ -149,19 +150,26 @@ export const Chat = () => {
   }, [messages, isLoading]);
 
   const createNewConversation = async () => {
-    // No database conversation needed for public access
-    setCurrentConversationId(Date.now().toString());
+    const newConversation = conversationStorage.create();
+    setCurrentConversationId(newConversation.id);
     setMessages([]);
   };
 
   const loadConversation = async (conversationId: string) => {
-    // No conversation loading for public access
-    // Conversations are session-only
+    const conversation = conversationStorage.getById(conversationId);
+    if (conversation) {
+      setCurrentConversationId(conversation.id);
+      setMessages(conversation.messages);
+    }
   };
 
   const saveMessage = async (message: Message) => {
-    // No database persistence needed for public access
-    // Messages are only stored in memory during the session
+    if (currentConversationId) {
+      const conversation = conversationStorage.getById(currentConversationId);
+      if (conversation) {
+        conversationStorage.update(currentConversationId, [...conversation.messages, message]);
+      }
+    }
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -191,6 +199,13 @@ export const Chat = () => {
   const handleSend = async () => {
     if ((!input.trim() && uploadedImages.length === 0) || isLoading) return;
     
+    // Create new conversation if none exists
+    if (!currentConversationId) {
+      createNewConversation();
+      // Wait a bit for state to update
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
     // Everyone has unlimited image generation - no restrictions
 
     const userMessage: Message = {
@@ -459,17 +474,44 @@ export const Chat = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      // Delete from database
+      const updatedMessages = messages.filter(m => m.id !== messageId);
+      setMessages(updatedMessages);
+      
       if (currentConversationId) {
-        await (supabase as any).from("messages").delete().eq("id", messageId);
+        conversationStorage.update(currentConversationId, updatedMessages);
       }
       
-      // Remove from state
-      setMessages(prev => prev.filter(m => m.id !== messageId));
       toast.success("Message deleted");
     } catch (error) {
       toast.error("Failed to delete message");
     }
+  };
+
+  const handleCopyMessage = async (content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      toast.success("Copied to clipboard");
+    } catch (error) {
+      toast.error("Failed to copy");
+    }
+  };
+
+  const handleClearAllChats = () => {
+    if (confirm("Are you sure you want to delete all conversations?")) {
+      conversationStorage.deleteAll();
+      setMessages([]);
+      setCurrentConversationId(null);
+      toast.success("All conversations deleted");
+    }
+  };
+
+  const handleDeleteConversation = (id: string) => {
+    conversationStorage.delete(id);
+    if (currentConversationId === id) {
+      setMessages([]);
+      setCurrentConversationId(null);
+    }
+    toast.success("Conversation deleted");
   };
 
   const isEmpty = messages.length === 0;
@@ -480,9 +522,15 @@ export const Chat = () => {
     <Sidebar
       onNewChat={() => {
         createNewConversation();
-        // אם בסמארטפון - נסגור את ה־drawer אחרי יצירת שיחה
         if (isMobile) setMobileMenuOpen(false);
       }}
+      onClearAllChats={handleClearAllChats}
+      currentConversationId={currentConversationId}
+      onSelectConversation={(id) => {
+        loadConversation(id);
+        if (isMobile) setMobileMenuOpen(false);
+      }}
+      onDeleteConversation={handleDeleteConversation}
     />
   );
 
@@ -604,6 +652,16 @@ export const Chat = () => {
                       <ChatMessage message={message} index={index} />
                       {message.role === "assistant" && (
                         <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleCopyMessage(message.content)}
+                            disabled={isLoading}
+                            className="text-xs"
+                          >
+                            <Copy className="h-3 w-3 mr-1" />
+                            Copy
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"

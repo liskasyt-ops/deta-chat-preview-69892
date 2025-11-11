@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, User, Bell, Globe, Shield } from "lucide-react";
+import { ArrowLeft, User, Bell, Globe, Shield, Download, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { conversationStorage } from "@/lib/conversationStorage";
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -23,6 +24,26 @@ const Settings = () => {
 
   const handleSaveSettings = () => {
     toast.success("Settings saved successfully!");
+  };
+
+  const handleExportData = () => {
+    const conversations = conversationStorage.getAll();
+    const dataStr = JSON.stringify(conversations, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `deta-conversations-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    toast.success("Data exported successfully");
+  };
+
+  const handleClearAllData = () => {
+    if (confirm("Are you sure you want to delete all conversations? This cannot be undone.")) {
+      conversationStorage.deleteAll();
+      toast.success("All data cleared");
+    }
   };
 
   return (
@@ -152,6 +173,24 @@ const Settings = () => {
                     checked={privacy}
                     onCheckedChange={setPrivacy}
                   />
+                </div>
+                <div className="pt-4 space-y-2">
+                  <Button
+                    onClick={handleExportData}
+                    variant="outline"
+                    className="w-full justify-start"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export All Conversations
+                  </Button>
+                  <Button
+                    onClick={handleClearAllData}
+                    variant="destructive"
+                    className="w-full justify-start"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Clear All Data
+                  </Button>
                 </div>
               </CardContent>
             </Card>

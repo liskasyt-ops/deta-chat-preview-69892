@@ -1,16 +1,30 @@
 import {
   MessageSquarePlus,
-  Library,
   Sparkles,
+  Settings,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
+import { ConversationHistory } from "./ConversationHistory";
+import { useNavigate } from "react-router-dom";
 
 interface SidebarProps {
   onNewChat: () => void;
+  onClearAllChats: () => void;
+  currentConversationId: string | null;
+  onSelectConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => void;
 }
 
-export const Sidebar = ({ onNewChat }: SidebarProps) => {
+export const Sidebar = ({ 
+  onNewChat, 
+  onClearAllChats,
+  currentConversationId,
+  onSelectConversation,
+  onDeleteConversation,
+}: SidebarProps) => {
+  const navigate = useNavigate();
   return (
     <motion.aside
       initial={{ x: -100, opacity: 0 }}
@@ -53,31 +67,50 @@ export const Sidebar = ({ onNewChat }: SidebarProps) => {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-2 space-y-2 overflow-hidden flex flex-col">
-          <Button
-            variant="ghost"
-            onClick={onNewChat}
-            className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
-            title="New Chat"
-          >
-            <MessageSquarePlus className="h-5 w-5" />
-            <span>New Chat</span>
-          </Button>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-2 space-y-2 pb-2">
+            <Button
+              variant="ghost"
+              onClick={onNewChat}
+              className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+              title="New Chat"
+            >
+              <MessageSquarePlus className="h-5 w-5" />
+              <span>New Chat</span>
+            </Button>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
-            title="Library"
-          >
-            <Library className="h-5 w-5" />
-            <span>Library</span>
-          </Button>
-        </nav>
+            <Button
+              variant="ghost"
+              onClick={onClearAllChats}
+              className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-destructive transition-all"
+              title="Clear All Chats"
+            >
+              <Trash2 className="h-5 w-5" />
+              <span>Clear All</span>
+            </Button>
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <ConversationHistory
+              currentConversationId={currentConversationId}
+              onSelectConversation={onSelectConversation}
+              onDeleteConversation={onDeleteConversation}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Footer */}
-      <div className="p-4 text-center">
-        <div className="text-xs text-muted-foreground">
+      <div className="p-2 space-y-2">
+        <Button
+          variant="ghost"
+          onClick={() => navigate("/settings")}
+          className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+        >
+          <Settings className="h-5 w-5" />
+          <span>Settings</span>
+        </Button>
+        <div className="px-2 text-xs text-center text-muted-foreground">
           Powered by LiskCell · LPT Engine
         </div>
       </div>

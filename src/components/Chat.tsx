@@ -138,8 +138,15 @@ export const Chat = () => {
   }, [isLoading, messages]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    // Only auto-scroll when a new message is added (not when user is typing)
+    if (scrollRef.current && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      // Only scroll if the last message is from assistant or if loading
+      if (lastMessage.role === "assistant" || isLoading) {
+        scrollRef.current.scrollIntoView({ behavior: "smooth" });
+      }
+    }
+  }, [messages, isLoading]);
 
   const createNewConversation = async () => {
     // No database conversation needed for public access
@@ -488,21 +495,8 @@ export const Chat = () => {
       {isMobile && (
         <Drawer
           open={mobileMenuOpen}
-          onOpenChange={(open) => {
-            // אם המשתמש בפוקוס על הטקסטאריאה ומקליד — נתעלם משינוי פתיחה/סגירה אוטומטי
-            // כך ה־Drawer לא ייסגר/ייפתח בזמן הקלדה
-            try {
-              const isTextareaFocused = document.activeElement === textareaRef.current;
-              if (isTextareaFocused) {
-                // התעלמות — למנוע הפרעות בזמן הקלדה
-                return;
-              }
-            } catch (err) {
-              // במקרה של בעיה, נפעל כרגיל
-            }
-
-            setMobileMenuOpen(open);
-          }}
+          onOpenChange={setMobileMenuOpen}
+          modal={false}
         >
           <DrawerContent className="h-[85vh]">
             <DrawerHeader className="flex items-center justify-between px-4">
@@ -694,6 +688,12 @@ export const Chat = () => {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyPress}
+                onFocus={() => {
+                  // Prevent drawer from auto-closing when typing
+                  if (isMobile && textareaRef.current) {
+                    textareaRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                  }
+                }}
                 placeholder="Ask Anything..."
                 className="flex-1 bg-transparent border-0 focus-visible:ring-0 resize-none min-h-[40px] max-h-[200px] overflow-y-auto"
                 disabled={isLoading}

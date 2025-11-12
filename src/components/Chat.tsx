@@ -90,29 +90,6 @@ export const Chat = () => {
     setRandomQuestions(shuffled.slice(0, 3));
   }, []);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + K - New chat
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        createNewConversation();
-      }
-      // Escape - Stop generation
-      if (e.key === 'Escape' && isLoading) {
-        e.preventDefault();
-        if (abortControllerRef.current) {
-          abortControllerRef.current.abort();
-          abortControllerRef.current = null;
-        }
-        setIsLoading(false);
-        setDetaStatus(null);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isLoading]);
 
   // Set status animation once based on input - no rotation
   useEffect(() => {

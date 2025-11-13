@@ -26,13 +26,7 @@ export const Sidebar = ({
 }: SidebarProps) => {
   const navigate = useNavigate();
   return (
-    <motion.aside
-      initial={{ x: -100, opacity: 0 }}
-      animate={{
-        x: 0,
-        opacity: 1,
-      }}
-      transition={{ duration: 0.3 }}
+    <aside
       className="h-screen w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col justify-between"
     >
       <div>
@@ -114,6 +108,6 @@ export const Sidebar = ({
           Powered by LiskCell · LPT Engine
         </div>
       </div>
-    </motion.aside>
+    </aside>
   );
 };

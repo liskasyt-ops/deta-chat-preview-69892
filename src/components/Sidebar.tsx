@@ -34,18 +34,16 @@ export const Sidebar = ({
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-2">
             {/* Sparkles Logo */}
-            <motion.div className="relative flex items-center justify-center">
-              <motion.div
-                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-                transition={{ duration: 2, repeat: Infinity }}
-                className="absolute inset-0 bg-primary/20 rounded-full blur-xl"
-              />
-              <motion.div
-                animate={{ rotate: [0, 360] }}
-                transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-              >
-                <Sparkles className="h-8 w-8 text-primary relative z-10" />
-              </motion.div>
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ 
+                duration: 3,
+                repeat: Infinity,
+                ease: "easeInOut"
+              }}
+              className="flex items-center justify-center"
+            >
+              <Sparkles className="h-8 w-8 text-primary" />
             </motion.div>
 
             {/* Logo Text */}

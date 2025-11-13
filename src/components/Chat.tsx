@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -126,19 +126,19 @@ export const Chat = () => {
     }
   }, [messages, isLoading]);
 
-  const createNewConversation = async () => {
+  const createNewConversation = useCallback(async () => {
     const newConversation = conversationStorage.create();
     setCurrentConversationId(newConversation.id);
     setMessages([]);
-  };
+  }, []);
 
-  const loadConversation = async (conversationId: string) => {
+  const loadConversation = useCallback(async (conversationId: string) => {
     const conversation = conversationStorage.getById(conversationId);
     if (conversation) {
       setCurrentConversationId(conversation.id);
       setMessages(conversation.messages);
     }
-  };
+  }, []);
 
   const saveMessage = async (message: Message) => {
     if (currentConversationId) {
@@ -473,40 +473,45 @@ export const Chat = () => {
     }
   };
 
-  const handleClearAllChats = () => {
+  const handleClearAllChats = useCallback(() => {
     if (confirm("Are you sure you want to delete all conversations?")) {
       conversationStorage.deleteAll();
       setMessages([]);
       setCurrentConversationId(null);
       toast.success("All conversations deleted");
     }
-  };
+  }, []);
 
-  const handleDeleteConversation = (id: string) => {
+  const handleDeleteConversation = useCallback((id: string) => {
     conversationStorage.delete(id);
     if (currentConversationId === id) {
       setMessages([]);
       setCurrentConversationId(null);
     }
     toast.success("Conversation deleted");
-  };
+  }, [currentConversationId]);
 
   const isEmpty = messages.length === 0;
   const currentStatus = STATUS_ANIMATIONS[currentStatusIndex];
 
+  // Memoize sidebar callbacks
+  const handleNewChat = useCallback(() => {
+    createNewConversation();
+    if (isMobile) setMobileMenuOpen(false);
+  }, [createNewConversation, isMobile]);
+
+  const handleSelectConversation = useCallback((id: string) => {
+    loadConversation(id);
+    if (isMobile) setMobileMenuOpen(false);
+  }, [loadConversation, isMobile]);
+
   // SidebarContent wrapper
   const SidebarContent = () => (
     <Sidebar
-      onNewChat={() => {
-        createNewConversation();
-        if (isMobile) setMobileMenuOpen(false);
-      }}
+      onNewChat={handleNewChat}
       onClearAllChats={handleClearAllChats}
       currentConversationId={currentConversationId}
-      onSelectConversation={(id) => {
-        loadConversation(id);
-        if (isMobile) setMobileMenuOpen(false);
-      }}
+      onSelectConversation={handleSelectConversation}
       onDeleteConversation={handleDeleteConversation}
     />
   );

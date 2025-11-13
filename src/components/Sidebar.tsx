@@ -49,14 +49,9 @@ export const Sidebar = ({
             </motion.div>
 
             {/* Logo Text */}
-            <motion.h1
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.2 }}
-              className="text-2xl font-bold text-foreground"
-            >
+            <h1 className="text-2xl font-bold text-foreground">
               Deta
-            </motion.h1>
+            </h1>
           </div>
         </div>
 

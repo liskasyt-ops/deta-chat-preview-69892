@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ConversationHistory } from "./ConversationHistory";
 import { useNavigate } from "react-router-dom";
+import { memo } from "react";
 
 interface SidebarProps {
   onNewChat: () => void;
@@ -17,7 +18,7 @@ interface SidebarProps {
   onDeleteConversation: (id: string) => void;
 }
 
-export const Sidebar = ({ 
+export const Sidebar = memo(({ 
   onNewChat, 
   onClearAllChats,
   currentConversationId,
@@ -103,4 +104,4 @@ export const Sidebar = ({
       </div>
     </aside>
   );
-};
+});

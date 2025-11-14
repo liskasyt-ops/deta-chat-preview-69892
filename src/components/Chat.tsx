@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -505,8 +505,8 @@ export const Chat = () => {
     if (isMobile) setMobileMenuOpen(false);
   }, [loadConversation, isMobile]);
 
-  // SidebarContent wrapper
-  const SidebarContent = () => (
+  // Memoize sidebar to prevent re-renders during typing
+  const sidebarContent = useMemo(() => (
     <Sidebar
       onNewChat={handleNewChat}
       onClearAllChats={handleClearAllChats}
@@ -514,12 +514,12 @@ export const Chat = () => {
       onSelectConversation={handleSelectConversation}
       onDeleteConversation={handleDeleteConversation}
     />
-  );
+  ), [handleNewChat, handleClearAllChats, currentConversationId, handleSelectConversation, handleDeleteConversation]);
 
   return (
     <div className="flex h-screen bg-gradient-to-b from-black to-purple-900">
       {/* Desktop Sidebar */}
-      {!isMobile && <SidebarContent />}
+      {!isMobile && sidebarContent}
 
       {/* Mobile Drawer */}
       {isMobile && (
@@ -541,7 +541,7 @@ export const Chat = () => {
                 </Button>
               </div>
             </DrawerHeader>
-            <SidebarContent />
+            {sidebarContent}
           </DrawerContent>
         </Drawer>
       )}

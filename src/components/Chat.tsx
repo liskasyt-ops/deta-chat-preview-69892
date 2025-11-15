@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { User } from "@supabase/supabase-js";
+import backgroundImage from "@/assets/background.png";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,7 +56,9 @@ const STATUS_ANIMATIONS = [
 ];
 
 export const Chat = () => {
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [user, setUser] = useState<User | null>(null);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -89,6 +93,25 @@ export const Chat = () => {
     const shuffled = [...DAILY_QUESTIONS].sort(() => Math.random() - 0.5);
     setRandomQuestions(shuffled.slice(0, 3));
   }, []);
+
+  // Check authentication
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null);
+      if (!session) {
+        navigate("/auth");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
 
 
   // Set status animation once based on input - no rotation
@@ -473,15 +496,6 @@ export const Chat = () => {
     }
   };
 
-  const handleClearAllChats = useCallback(() => {
-    if (confirm("Are you sure you want to delete all conversations?")) {
-      conversationStorage.deleteAll();
-      setMessages([]);
-      setCurrentConversationId(null);
-      toast.success("All conversations deleted");
-    }
-  }, []);
-
   const handleDeleteConversation = useCallback((id: string) => {
     conversationStorage.delete(id);
     if (currentConversationId === id) {
@@ -509,17 +523,27 @@ export const Chat = () => {
   const sidebarContent = useMemo(() => (
     <Sidebar
       onNewChat={handleNewChat}
-      onClearAllChats={handleClearAllChats}
       currentConversationId={currentConversationId}
       onSelectConversation={handleSelectConversation}
       onDeleteConversation={handleDeleteConversation}
+      isAuthenticated={!!user}
     />
-  ), [handleNewChat, handleClearAllChats, currentConversationId, handleSelectConversation, handleDeleteConversation]);
+  ), [handleNewChat, currentConversationId, handleSelectConversation, handleDeleteConversation, user]);
 
   return (
-    <div className="flex h-screen bg-gradient-to-b from-black to-purple-900">
+    <div 
+      className="flex h-screen relative"
+      style={{
+        backgroundImage: `url(${backgroundImage})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat"
+      }}
+    >
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      
       {/* Desktop Sidebar */}
-      {!isMobile && sidebarContent}
+      {!isMobile && <div className="relative z-10">{sidebarContent}</div>}
 
       {/* Mobile Drawer */}
       {isMobile && (
@@ -546,12 +570,12 @@ export const Chat = () => {
         </Drawer>
       )}
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
         <motion.header
           initial={{ y: -50, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
           className="glass border-b border-border/50 px-3 md:px-6 py-3 md:py-4"
         >
           <div className="flex items-center justify-between max-w-5xl mx-auto">

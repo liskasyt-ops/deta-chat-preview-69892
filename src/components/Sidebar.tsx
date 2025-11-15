@@ -2,30 +2,48 @@ import {
   MessageSquarePlus,
   Sparkles,
   Settings,
-  Trash2,
+  Library,
+  Bot,
+  LogOut,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { ConversationHistory } from "./ConversationHistory";
 import { useNavigate } from "react-router-dom";
-import { memo } from "react";
+import { memo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 
 interface SidebarProps {
   onNewChat: () => void;
-  onClearAllChats: () => void;
   currentConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void;
+  isAuthenticated: boolean;
 }
 
 export const Sidebar = memo(({ 
   onNewChat, 
-  onClearAllChats,
   currentConversationId,
   onSelectConversation,
   onDeleteConversation,
+  isAuthenticated,
 }: SidebarProps) => {
   const navigate = useNavigate();
+  const [showHistory, setShowHistory] = useState(false);
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast.success("Signed out successfully");
+      navigate("/auth");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to sign out");
+    }
+  };
+
   return (
     <aside
       className="h-screen w-64 bg-sidebar-background border-r border-sidebar-border flex flex-col justify-between"
@@ -57,47 +75,99 @@ export const Sidebar = memo(({
         {/* Navigation */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="px-2 space-y-2 pb-2">
-            <Button
-              variant="ghost"
-              onClick={onNewChat}
-              className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
-              title="New Chat"
-            >
-              <MessageSquarePlus className="h-5 w-5" />
-              <span>New Chat</span>
-            </Button>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                onClick={onNewChat}
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+                title="New Chat"
+              >
+                <MessageSquarePlus className="h-5 w-5" />
+                <span>New Chat</span>
+              </Button>
+            </motion.div>
 
-            <Button
-              variant="ghost"
-              onClick={onClearAllChats}
-              className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-destructive transition-all"
-              title="Clear All Chats"
-            >
-              <Trash2 className="h-5 w-5" />
-              <span>Clear All</span>
-            </Button>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                onClick={() => setShowHistory(!showHistory)}
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+                title="Chat History"
+              >
+                <History className="h-5 w-5" />
+                <span>Chat History</span>
+              </Button>
+            </motion.div>
+
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+                title="Library"
+              >
+                <Library className="h-5 w-5" />
+                <span>Library</span>
+              </Button>
+            </motion.div>
+
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all relative"
+                title="AI Agent"
+              >
+                <Bot className="h-5 w-5" />
+                <span>AI Agent</span>
+                <Badge variant="secondary" className="ml-auto text-xs">Soon</Badge>
+              </Button>
+            </motion.div>
           </div>
 
-          <div className="flex-1 overflow-hidden">
-            <ConversationHistory
-              currentConversationId={currentConversationId}
-              onSelectConversation={onSelectConversation}
-              onDeleteConversation={onDeleteConversation}
-            />
-          </div>
+          {showHistory && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="flex-1 overflow-hidden"
+            >
+              <ConversationHistory
+                currentConversationId={currentConversationId}
+                onSelectConversation={onSelectConversation}
+                onDeleteConversation={onDeleteConversation}
+              />
+            </motion.div>
+          )}
         </div>
       </div>
 
       {/* Footer */}
       <div className="p-2 space-y-2">
-        <Button
-          variant="ghost"
-          onClick={() => navigate("/settings")}
-          className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
-        >
-          <Settings className="h-5 w-5" />
-          <span>Settings</span>
-        </Button>
+        {isAuthenticated && (
+          <>
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                onClick={() => navigate("/settings")}
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-primary transition-all"
+              >
+                <Settings className="h-5 w-5" />
+                <span>Settings</span>
+              </Button>
+            </motion.div>
+            
+            <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+              <Button
+                variant="ghost"
+                onClick={handleSignOut}
+                className="w-full justify-start gap-3 hover:bg-sidebar-accent hover:text-destructive transition-all"
+              >
+                <LogOut className="h-5 w-5" />
+                <span>Sign Out</span>
+              </Button>
+            </motion.div>
+          </>
+        )}
+        
         <div className="px-2 text-xs text-center text-muted-foreground">
           Powered by LiskCell · LPT Engine
         </div>

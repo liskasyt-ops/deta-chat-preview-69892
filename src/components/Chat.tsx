@@ -21,7 +21,6 @@ import {
   DrawerDescription,
 } from "@/components/ui/drawer";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { conversationStorage } from "@/lib/conversationStorage";
 
 interface Message {
   id: string;
@@ -71,6 +70,7 @@ export const Chat = () => {
   const [randomQuestions, setRandomQuestions] = useState<string[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -150,25 +150,87 @@ export const Chat = () => {
   }, [messages, isLoading]);
 
   const createNewConversation = useCallback(async () => {
-    const newConversation = conversationStorage.create();
-    setCurrentConversationId(newConversation.id);
-    setMessages([]);
-  }, []);
+    if (!user) return null;
+    
+    try {
+      const { data, error } = await supabase
+        .from("conversations")
+        .insert({
+          user_id: user.id,
+          title: "New Chat"
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      setCurrentConversationId(data.id);
+      setMessages([]);
+      setRefreshTrigger(prev => prev + 1);
+      return data.id;
+    } catch (error) {
+      console.error("Failed to create conversation:", error);
+      toast.error("Failed to create conversation");
+      return null;
+    }
+  }, [user]);
 
   const loadConversation = useCallback(async (conversationId: string) => {
-    const conversation = conversationStorage.getById(conversationId);
-    if (conversation) {
-      setCurrentConversationId(conversation.id);
-      setMessages(conversation.messages);
+    try {
+      // Load messages from Supabase
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", conversationId)
+        .order("created_at", { ascending: true });
+
+      if (error) throw error;
+
+      const loadedMessages: Message[] = (data || []).map(msg => ({
+        id: msg.id,
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
+        timestamp: new Date(msg.created_at || Date.now()),
+        images: msg.image_url ? [msg.image_url] : undefined,
+      }));
+
+      setCurrentConversationId(conversationId);
+      setMessages(loadedMessages);
+    } catch (error) {
+      console.error("Failed to load conversation:", error);
+      toast.error("Failed to load conversation");
     }
   }, []);
 
-  const saveMessage = async (message: Message) => {
-    if (currentConversationId) {
-      const conversation = conversationStorage.getById(currentConversationId);
-      if (conversation) {
-        conversationStorage.update(currentConversationId, [...conversation.messages, message]);
-      }
+  const saveMessageToSupabase = async (message: Message, conversationId: string) => {
+    try {
+      await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          role: message.role,
+          content: message.content,
+          image_url: message.images?.[0] || null,
+        });
+    } catch (error) {
+      console.error("Failed to save message:", error);
+    }
+  };
+
+  const updateConversationTitle = async (conversationId: string, firstMessage: string) => {
+    try {
+      const title = firstMessage.length > 30 
+        ? firstMessage.substring(0, 30) + "..." 
+        : firstMessage;
+      
+      await supabase
+        .from("conversations")
+        .update({ title, updated_at: new Date().toISOString() })
+        .eq("id", conversationId);
+      
+      setRefreshTrigger(prev => prev + 1);
+    } catch (error) {
+      console.error("Failed to update title:", error);
     }
   };
 
@@ -200,13 +262,11 @@ export const Chat = () => {
     if ((!input.trim() && uploadedImages.length === 0) || isLoading) return;
     
     // Create new conversation if none exists
-    if (!currentConversationId) {
-      createNewConversation();
-      // Wait a bit for state to update
-      await new Promise(resolve => setTimeout(resolve, 50));
+    let convId = currentConversationId;
+    if (!convId) {
+      convId = await createNewConversation();
+      if (!convId) return;
     }
-
-    // Everyone has unlimited image generation - no restrictions
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -217,7 +277,12 @@ export const Chat = () => {
     };
 
     setMessages(prev => [...prev, userMessage]);
-    await saveMessage(userMessage);
+    await saveMessageToSupabase(userMessage, convId);
+    
+    // Update title if this is the first message
+    if (messages.length === 0) {
+      await updateConversationTitle(convId, userMessage.content);
+    }
 
     const currentInput = input;
     setInput("");
@@ -257,7 +322,6 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          // No restrictions - everyone can generate unlimited images
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
@@ -281,7 +345,16 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          await saveMessage({ id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages.length ? assistantImages : undefined, sources: assistantSources.length ? assistantSources : undefined });
+          
+          const assistantMessage: Message = { 
+            id: Date.now().toString(), 
+            role: "assistant", 
+            content: assistantContent, 
+            timestamp: new Date(), 
+            images: assistantImages.length ? assistantImages : undefined, 
+            sources: assistantSources.length ? assistantSources : undefined 
+          };
+          await saveMessageToSupabase(assistantMessage, convId!);
         },
         onError: (error) => {
           toast.error(error);
@@ -374,7 +447,7 @@ export const Chat = () => {
   };
 
   const handleRegenerateResponse = async () => {
-    if (isLoading || messages.length < 2) return;
+    if (isLoading || messages.length < 2 || !currentConversationId) return;
 
     // Find the last user message
     let lastUserMessageIndex = -1;
@@ -429,7 +502,6 @@ export const Chat = () => {
         abortSignal: abortControllerRef.current?.signal,
         onDelta: upsertAssistant,
         onImage: (imgUrl) => {
-          // No restrictions - everyone can generate unlimited images
           assistantImages.push(imgUrl);
           setMessages(prev => {
             const last = prev[prev.length - 1];
@@ -453,7 +525,16 @@ export const Chat = () => {
           setIsLoading(false);
           setDetaStatus(null);
           abortControllerRef.current = null;
-          await saveMessage({ id: Date.now().toString(), role: "assistant", content: assistantContent, timestamp: new Date(), images: assistantImages.length ? assistantImages : undefined, sources: assistantSources.length ? assistantSources : undefined });
+          
+          const assistantMessage: Message = { 
+            id: Date.now().toString(), 
+            role: "assistant", 
+            content: assistantContent, 
+            timestamp: new Date(), 
+            images: assistantImages.length ? assistantImages : undefined, 
+            sources: assistantSources.length ? assistantSources : undefined 
+          };
+          await saveMessageToSupabase(assistantMessage, currentConversationId!);
         },
         onError: (error) => {
           toast.error(error);
@@ -474,12 +555,14 @@ export const Chat = () => {
 
   const handleDeleteMessage = async (messageId: string) => {
     try {
+      // Delete from Supabase
+      await supabase
+        .from("messages")
+        .delete()
+        .eq("id", messageId);
+      
       const updatedMessages = messages.filter(m => m.id !== messageId);
       setMessages(updatedMessages);
-      
-      if (currentConversationId) {
-        conversationStorage.update(currentConversationId, updatedMessages);
-      }
       
       toast.success("Message deleted");
     } catch (error) {
@@ -497,12 +580,10 @@ export const Chat = () => {
   };
 
   const handleDeleteConversation = useCallback((id: string) => {
-    conversationStorage.delete(id);
     if (currentConversationId === id) {
       setMessages([]);
       setCurrentConversationId(null);
     }
-    toast.success("Conversation deleted");
   }, [currentConversationId]);
 
   const isEmpty = messages.length === 0;
@@ -510,9 +591,10 @@ export const Chat = () => {
 
   // Memoize sidebar callbacks
   const handleNewChat = useCallback(() => {
-    createNewConversation();
+    setMessages([]);
+    setCurrentConversationId(null);
     if (isMobile) setMobileMenuOpen(false);
-  }, [createNewConversation, isMobile]);
+  }, [isMobile]);
 
   const handleSelectConversation = useCallback((id: string) => {
     loadConversation(id);
@@ -527,8 +609,9 @@ export const Chat = () => {
       onSelectConversation={handleSelectConversation}
       onDeleteConversation={handleDeleteConversation}
       isAuthenticated={!!user}
+      refreshTrigger={refreshTrigger}
     />
-  ), [handleNewChat, currentConversationId, handleSelectConversation, handleDeleteConversation, user]);
+  ), [handleNewChat, currentConversationId, handleSelectConversation, handleDeleteConversation, user, refreshTrigger]);
 
   return (
     <div 
